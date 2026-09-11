@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+venv/
+newvenv/
+__pycache__/
+*.pyc
+stream_processor/rocksdb_data/
+stream_processor/rocksdb_test/
