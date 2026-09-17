@@ -3,12 +3,14 @@ from recovery import ChangelogManager
 from confluent_kafka import Consumer
 import json
 from datetime import datetime
-
+from metrics import start_metrics_server, record_event, set_worker_status
 
 print("Starting Stream Processor - Week 3...")
 
+# Start Prometheus metrics server
+start_metrics_server(8000)
+set_worker_status(1)
 
-# Kafka Consumer
 consumer = Consumer({
     "bootstrap.servers": "localhost:9092",
     "group.id": "streamforge-week3",
@@ -17,29 +19,17 @@ consumer = Consumer({
 
 consumer.subscribe(["truck-telemetry"])
 
-
-# RocksDB + Kafka Changelog
 state_store = StateStore()
-
-# Use the SAME RocksDB instance
 changelog = ChangelogManager(state_store)
 
-
-# Truck data
 truck_data = {}
-
-# 5-minute window
 WINDOW_SECONDS = 300
-
 window_start = datetime.now()
 
 print("Waiting for messages...")
 
-
 try:
-
     while True:
-
         message = consumer.poll(1.0)
 
         if message is not None and not message.error():
@@ -48,7 +38,6 @@ try:
                 message.value().decode("utf-8")
             )
 
-            # Filter temperature > 0
             if data["temperature"] > 0:
 
                 truck_id = data["truck_id"]
@@ -61,14 +50,19 @@ try:
 
                 print("Processed:", data)
 
-            else:
+                # Calculate real processing lag
+                event_ts = datetime.fromisoformat(
+                    data["timestamp"]
+                ).timestamp()
 
+                record_event(event_ts)
+
+            else:
                 print("Invalid data skipped:", data)
 
-
-        # Check window
         current_time = datetime.now()
 
+        # Check 5-minute window
         if (
             current_time - window_start
         ).total_seconds() >= WINDOW_SECONDS:
@@ -115,18 +109,16 @@ try:
 
             print("-------------------------\n")
 
-            # Start new window
             truck_data = {}
-
             window_start = datetime.now()
-
 
 except KeyboardInterrupt:
 
     print("\nStream Processor Stopped.")
 
-
 finally:
+
+    set_worker_status(0)
 
     consumer.close()
     state_store.close()
